@@ -485,6 +485,40 @@ class BolfiSample(Sample):
         return vis.plot_traces(self, selector, axes, **kwargs)
 
 
+class BOLFIRESample(Sample):
+    """Container for results from BOLFIRE."""
+
+    def __init__(self, method_name, chains, parameter_names, warmup, *args, **kwargs):
+        """Initialize BOLFIRE result.
+
+        Parameters
+        ----------
+        method_name: str
+            Name of the inference method.
+        chains: np.ndarray (n_chains, n_samples, n_parameters)
+            Chains from sampling, warmup included.
+        parameter_names: list
+            List of names in the outputs dict that refer to model parameters.
+        warmup: int
+            Number of warmup iterations in chains.
+
+        """
+        n_chains = chains.shape[0]
+        warmed_up = chains[:, warmup:, :]
+        concatenated = warmed_up.reshape((-1,) + chains.shape[2:])
+        outputs = dict(zip(parameter_names, concatenated.T))
+
+        super(BOLFIRESample, self).__init__(
+            method_name=method_name,
+            outputs=outputs,
+            parameter_names=parameter_names,
+            chains=chains,
+            n_chains=n_chains,
+            warmup=warmed_up,
+            *args, **kwargs
+        )
+
+
 class RomcSample(Sample):
     """Container for results from ROMC."""
 

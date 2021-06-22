@@ -192,16 +192,16 @@ class LCBSC(AcquisitionBase):
 
     """
 
-    def __init__(self, *args, delta=None, **kwargs):
+    def __init__(self, *args, delta=None, include_prior=False, **kwargs):
         """Initialize LCBSC.
 
         Parameters
         ----------
-        delta : float, optional
+        delta: float, optional
             In between (0, 1). Default is 1/exploration_rate. If given, overrides the
             exploration_rate.
-        args
-        kwargs
+        include_prior: bool, optional
+            If true, add negative log prior to model evaluations.
 
         """
         if delta is not None:
@@ -212,6 +212,7 @@ class LCBSC(AcquisitionBase):
         super(LCBSC, self).__init__(*args, **kwargs)
         self.name = 'lcbsc'
         self.label_fn = 'Confidence Bound'
+        self.include_prior = include_prior
 
     @property
     def delta(self):
@@ -225,34 +226,49 @@ class LCBSC(AcquisitionBase):
         return 2 * np.log(t**(2 * d + 2) * np.pi**2 / (3 * self.delta))
 
     def evaluate(self, x, t=None):
-        r"""Evaluate the Lower confidence bound selection criterion.
-
-        mean - sqrt(\beta_t) * std
+        """Evaluate the Lower confidence bound selection criterion.
 
         Parameters
         ----------
-        x : numpy.array
-        t : int
+        x: np.ndarray
+        t: int, optional
             Current iteration (starting from 0).
+
+        Returns
+        -------
+        np.ndarray
 
         """
         mean, var = self.model.predict(x, noiseless=True)
-        return mean - np.sqrt(self._beta(t) * var)
+        value = mean - np.sqrt(self._beta(t) * var)
+        if self.include_prior:
+            # we use negative prior, since we minimize
+            negative_log_prior = -1 * self.prior.logpdf(x).reshape(-1, 1)
+            value += negative_log_prior
+        return value
 
     def evaluate_gradient(self, x, t=None):
         """Evaluate the gradient of the lower confidence bound selection criterion.
 
         Parameters
         ----------
-        x : numpy.array
-        t : int
+        x: np.ndarray
+        t: int, optional
             Current iteration (starting from 0).
+
+        Returns
+        -------
+        np.ndarray
 
         """
         mean, var = self.model.predict(x, noiseless=True)
         grad_mean, grad_var = self.model.predictive_gradients(x)
-
-        return grad_mean - 0.5 * grad_var * np.sqrt(self._beta(t) / var)
+        value = grad_mean - 0.5 * grad_var * np.sqrt(self._beta(t) / var)
+        if self.include_prior:
+            # we use negative prior, since we minimize
+            grad_negative_log_prior = -1 * self.prior.gradient_logpdf(x).reshape(1, -1)
+            value += grad_negative_log_prior
+        return value
 
 
 class MaxVar(AcquisitionBase):

@@ -187,8 +187,8 @@ def nuts(n_iter,
             params1 = params0 + stepsize * momentum1
             momentum1 += 0.5 * stepsize * grad_target(params1)
 
-            joint0 = target0 - 0.5 * momentum0.dot(momentum0)
-            joint1 = target(params1) - 0.5 * momentum1.dot(momentum1)
+            joint0 = target0 - 0.5 * np.inner(momentum0, momentum0)
+            joint1 = target(params1) - 0.5 * np.inner(momentum1, momentum1)
 
             if np.isfinite(joint1):
                 break
@@ -215,7 +215,7 @@ def nuts(n_iter,
             params1 = params0 + stepsize * momentum1
             momentum1 += 0.5 * stepsize * grad_target(params1)
 
-            joint1 = target(params1) - 0.5 * momentum1.dot(momentum1)
+            joint1 = target(params1) - 0.5 * np.inner(momentum1, momentum1)
 
     logger.debug("NUTS: Set initial stepsize {}.".format(stepsize))
 
@@ -239,7 +239,7 @@ def nuts(n_iter,
     for ii in range(1, n_iter + 1):
         momentum0 = random_state.randn(*params0.shape)
         samples_prev = samples[ii - 1, :]
-        log_joint0 = target(samples_prev) - 0.5 * momentum0.dot(momentum0)
+        log_joint0 = target(samples_prev) - 0.5 * np.inner(momentum0, momentum0)
         log_slicevar = log_joint0 - random_state.exponential()
         samples[ii, :] = samples_prev
         params_left = samples_prev
@@ -271,8 +271,9 @@ def nuts(n_iter,
                 n_diverged += is_div
             n_outside += is_out
             n_total += n_steps
-            all_ok = sub_ok and ((params_right - params_left).dot(momentum_left) >= 0) \
-                and ((params_right - params_left).dot(momentum_right) >= 0)
+            all_ok = sub_ok and \
+                (np.inner(params_right - params_left, momentum_left) >= 0) and \
+                (np.inner(params_right - params_left, momentum_right) >= 0)
             depth += 1
             if depth > max_depth:
                 logger.debug("NUTS: Maximum recursion depth {} exceeded.".format(max_depth))
@@ -324,7 +325,7 @@ def _build_tree_nuts(params, momentum, log_slicevar, step, depth, log_joint0, ta
         params1 = params + step * momentum1
         momentum1 = momentum1 + 0.5 * step * grad_target(params1)
 
-        log_joint = target(params1) - 0.5 * momentum1.dot(momentum1)
+        log_joint = target(params1) - 0.5 * np.inner(momentum1, momentum1)
         n_ok = float(log_slicevar <= log_joint)
         sub_ok = log_slicevar < (1000. + log_joint)  # check for diverging error
         is_out = False
@@ -366,8 +367,9 @@ def _build_tree_nuts(params, momentum, log_slicevar, step, depth, log_joint0, ta
                     params1 = params2  # accept move
             mh_ratio += mh_ratio2
             n_steps += n_steps2
-            sub_ok = sub_ok and ((params_right - params_left).dot(momentum_left) >= 0) \
-                and ((params_right - params_left).dot(momentum_right) >= 0)
+            sub_ok = sub_ok and \
+                (np.inner(params_right - params_left, momentum_left) >= 0) and \
+                (np.inner(params_right - params_left, momentum_right) >= 0)
             n_sub += n_sub2
 
         return params_left, momentum_left, params_right, momentum_right, params1, n_sub, sub_ok, \

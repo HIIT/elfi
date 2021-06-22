@@ -1,6 +1,7 @@
 """The module contains implementations of approximate posteriors."""
 
 import logging
+from collections import OrderedDict
 from multiprocessing import Pool
 from typing import Callable, List
 
@@ -257,6 +258,149 @@ class BolfiPosterior:
 
             else:
                 raise NotImplementedError("Currently unsupported for dim > 2")
+
+
+class BOLFIREPosterior:
+    """Results from BOLFIRE inference method."""
+
+    def __init__(self,
+                 parameter_names,
+                 model,
+                 prior,
+                 classifier_attributes,
+                 n_opt_inits=10,
+                 max_opt_iters=1000,
+                 *args, **kwargs):
+        """Initialize BOLFIREPosterior.
+
+        Parameters
+        ----------
+        parameter_names: list
+            Names of the parameter nodes.
+        model: elfi.bo.gpy_regression.GPyRegression
+            Instance of the surrogate model
+        prior: elfi.methods.utils.ModelPrior
+            Joint prior of the elfi model.
+        classifier_attributes: list
+            Classifier's attributes on each inference round.
+        n_opt_inits: int, optional
+            Number of initialization points in internal optimization.
+        max_opt_iters: int, optional
+            Maximum number of iterations performed in internal optimization.
+
+        """
+        self._parameter_names = parameter_names
+        self._model = model
+        self._prior = prior
+        self._n_opt_inits = n_opt_inits
+        self._max_opt_iters = max_opt_iters
+        self._classifier_attributes = classifier_attributes
+
+        # compute map estimates
+        self._map_estimates = self._compute_map_estimates()
+
+    @property
+    def map_estimates(self):
+        """Return the maximum a posterior estimate for each parameter.
+
+        Returns
+        -------
+        OrderedDict
+
+        """
+        return OrderedDict([(parameter_name, self._map_estimates[i]) for i, parameter_name
+                            in enumerate(self._parameter_names)])
+
+    @property
+    def classifier_attributes(self):
+        """Return the classifier's attributes."""
+        return self._classifier_attributes
+
+    @property
+    def surrogate_model_attributes(self):
+        """Return the surrogate model's (GP regression) attributes."""
+        return {
+            'parameters': self._model._gp.param_array.tolist(),
+            'X': self._model.X.tolist(),
+            'Y': self._model.Y.tolist()
+        }
+
+    def pdf(self, x):
+        """Return the unnormalized posterior at x.
+
+        Parameters
+        ----------
+        x: np.ndarray
+
+        Returns
+        -------
+        np.ndarray
+
+        """
+        return np.exp(self.logpdf(x))
+
+    def _negative_pdf(self, x):
+        """Return the negative unnormalized posterior at x."""
+        return -1 * self.pdf(x)
+
+    def logpdf(self, x):
+        """Return the unnormalized log-posterior at x.
+
+        Parameters
+        ----------
+        x: np.ndarray
+
+        Returns
+        -------
+        np.ndarray
+
+        """
+        return self._prior.logpdf(x).reshape(-1, 1) - self._model.predict_mean(x)
+
+    def gradient_pdf(self, x):
+        """Return the gradient of the unnormalized posterior pdf at x.
+
+        Parameters
+        ----------
+        x: np.ndarray
+
+        Returns
+        -------
+        np.ndarray
+
+        """
+        return np.exp(self.logpdf(x)) * self.gradient_logpdf(x)
+
+    def _negative_gradient_pdf(self, x):
+        """Return the negative gradient of the unnormalized posterior pdf at x."""
+        return -1 * self.gradient_pdf(x)
+
+    def gradient_logpdf(self, x):
+        """Return the gradient of unnormalized log-posterior pdf at x.
+
+        Parameters
+        ----------
+        x: np.ndarray
+
+        Returns
+        -------
+        np.ndarray
+
+        """
+        return self._prior.gradient_logpdf(x).reshape(1, -1) \
+            - self._model.predictive_gradient_mean(x)
+
+    def _compute_map_estimates(self):
+        """Return the maximum a posterior estimate for each parameter."""
+        minimum_location, _ = minimize(
+            fun=self._negative_pdf,
+            bounds=self._model.bounds,
+            grad=self._negative_gradient_pdf,
+            prior=self._prior,
+            n_start_points=self._n_opt_inits,
+            maxiter=self._max_opt_iters
+        )
+        return minimum_location
 
 
 class RomcPosterior:
